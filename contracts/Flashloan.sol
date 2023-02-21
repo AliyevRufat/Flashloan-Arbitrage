@@ -23,7 +23,7 @@ contract Flashloan is ICallee, DydxFlashloanBase
         uint repayAmount;
     }
 
-    event NewArbitrage(arbInfo.direction, uint profit, uint date);
+    event NewArbitrage(ArbInfo, uint profit, uint date);
 
     IKyberNetworkProxy kyber;
     IUniswapV2Router02 uniswap;
@@ -37,13 +37,13 @@ contract Flashloan is ICallee, DydxFlashloanBase
         kyber = IKyberNetworkProxy(kyberAddress);
         uniswap = IUniswapV2Router02(uniswapAddress);
         weth = IWeth(wethAddress);
-        dai = IERC(daiAddress);
+        dai = IERC20(daiAddress);
         beneficiary = beneficiaryAddress;
     }
 
     // This is the function that will be called postLoan
     // i.e. Encode the logic to handle your flashloaned funds here
-    function callFunction(address sender, Account.Info memory account, bytes memory data) public 
+    function callFunction(address sender, Account.Info memory account, bytes memory data) public
     {
         ArbInfo memory arbInfo = abi.decode(data, (ArbInfo));
         uint256 balanceDai = dai.balanceOf(address(this));
@@ -64,22 +64,22 @@ contract Flashloan is ICallee, DydxFlashloanBase
         else
         {
             //Buy ETH on Uniswap
-            dai.approve(address(uniswap), balamceDai);
+            dai.approve(address(uniswap), balanceDai);
             address[] memory path = new address[](2);
             path[0] = address(dai);
             path[1] = address(weth);
             uint[] memory minOuts = uniswap.getAmountsOut(balanceDai, path);
-            uniswap.swapExactETHForTokens(balanceDai, minOuts[1], path, address(this), now);
+            uniswap.swapExactETHForTokens.value(balanceDai)(minOuts[1], path, address(this), now);
             //Sell ETH on Kyber
             (uint expectedRate, ) = kyber.getExpectedRate(IERC20(KYBER_ETH_ADDRESS), dai, address(this).balance);
-            kyber.swapTokenToEther(address(this).balance)(dai, expectedRate);
+            kyber.swapTokenToEther(dai, address(this).balance, expectedRate);
         }
 
         require(dai.balanceOf(address(this)) >= arbInfo.repayAmount, "Not enough funds to repay DyDx loan!");
 
         uint profit = dai.balanceOf(address(this)) - arbInfo.repayAmount;
         dai.transfer(beneficiary, profit);
-        emit NewArbitrage(arbInfo.direction, profit, now);
+        emit NewArbitrage(arbInfo, profit, block.timestamp);
     }
 
     function initiateFlashloan(address _solo, address _token, uint256 _amount, Direction _direction) external 
